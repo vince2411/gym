@@ -99,7 +99,6 @@ const Login = () => {
           </p>
         </div>
 
-        {/* Demo Mode Notice */}
         {isOffline && !isRegister && (
           <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl">
             <div className="flex items-start gap-2.5">
@@ -107,14 +106,14 @@ const Login = () => {
                 💡
               </div>
               <div className="flex-1 text-xs">
-                <span className="font-bold text-yellow-400 block">Modo Demo Activado</span>
-                <span className="text-slate-300">Puedes registrarte o usar el botón de acceso rápido para probar la app con datos de ejemplo.</span>
+                <span className="font-bold text-yellow-400 block">Modo Local Activado</span>
+                <span className="text-slate-300">Puedes registrarte o iniciar sesión. Tus datos se guardarán en este dispositivo.</span>
                 <button
                   type="button"
                   onClick={handleQuickLogin}
                   className="mt-2.5 px-3 py-1.5 w-full bg-yellow-500 text-black hover:bg-yellow-400 rounded-xl font-bold transition-all duration-300"
                 >
-                  Acceso Rápido (Alex Smith)
+                  Acceso Rápido
                 </button>
               </div>
             </div>

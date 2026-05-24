@@ -96,8 +96,8 @@ const Sidebar = ({ isOpen, toggleSidebar }) => {
         {/* Offline Badge */}
         {isOffline && (
           <div className="mx-4 my-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-center">
-            <span className="text-xs font-semibold text-yellow-400 tracking-wider uppercase block">Modo Offline / Demo</span>
-            <span className="text-[10px] text-yellow-500/80 block mt-0.5">Usando Almacenamiento Local</span>
+            <span className="text-xs font-semibold text-yellow-400 tracking-wider uppercase block">Modo Local</span>
+            <span className="text-[10px] text-yellow-500/80 block mt-0.5">Datos en tu dispositivo</span>
           </div>
         )}
 

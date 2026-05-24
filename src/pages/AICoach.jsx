@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../services/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc } from 'firebase/firestore';
 import { aiService } from '../services/ai';
-import { EXERCISES_DATABASE } from '../data/exercises';
-import { Sparkles, Brain, Scale, Plus, Loader2, Key, Info, Check } from 'lucide-react';
+import { EXERCISES_DATABASE, MUSCLE_GROUPS } from '../data/exercises';
+import { Sparkles, Brain, Scale, Plus, Loader2, Info, Check, X, Search, Trash2, Dumbbell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Simple Markdown to JSX parser to support beautiful native rendering
@@ -16,11 +16,11 @@ const MarkdownRenderer = ({ text }) => {
     <div className="space-y-3 text-sm leading-relaxed text-slate-350">
       {lines.map((line, idx) => {
         // Headers
-        if (line.startsWith('###')) {
-          return <h4 key={idx} className="text-base font-extrabold text-white mt-4 flex items-center gap-1.5">{line.replace('###', '').trim()}</h4>;
-        }
         if (line.startsWith('####')) {
           return <h5 key={idx} className="text-sm font-bold text-accent-cyan mt-3">{line.replace('####', '').trim()}</h5>;
+        }
+        if (line.startsWith('###')) {
+          return <h4 key={idx} className="text-base font-extrabold text-white mt-4 flex items-center gap-1.5">{line.replace('###', '').trim()}</h4>;
         }
         if (line.startsWith('##')) {
           return <h3 key={idx} className="text-lg font-black text-white mt-5 border-b border-slate-800 pb-2">{line.replace('##', '').trim()}</h3>;
@@ -172,93 +172,125 @@ const AICoach = () => {
     }
   };
 
-  const [implementing, setImplementing] = useState(false);
-  const [implementedSuccess, setImplementedSuccess] = useState(false);
+  // ─── Review Modal State ───
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [reviewRoutineName, setReviewRoutineName] = useState('');
+  const [reviewRoutineDays, setReviewRoutineDays] = useState([]);
+  const [reviewExercises, setReviewExercises] = useState([]);
+  const [reviewSearchQuery, setReviewSearchQuery] = useState('');
+  const [reviewSelectedCategory, setReviewSelectedCategory] = useState('Todos');
+  const [savingRoutine, setSavingRoutine] = useState(false);
 
-  const handleImplementRoutine = async () => {
+  const daysOfWeek = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+  // When user clicks "Implementar Rutina", open the review modal with pre-matched exercises
+  const handleOpenReviewModal = () => {
     if (!result) return;
-    setImplementing(true);
-    setImplementedSuccess(false);
 
-    try {
-      // 1. Scan the AI output for exercise names in our database
-      const matchedExercises = [];
-      const lowerText = result.toLowerCase();
-      
-      EXERCISES_DATABASE.forEach(ex => {
-        if (lowerText.includes(ex.name.toLowerCase())) {
-          matchedExercises.push({
-            id: 'form_ex_' + Math.random().toString(36).substr(2, 9),
-            exerciseId: ex.id,
-            name: ex.name,
-            category: ex.category,
-            sets: [
-              { weight: 0, reps: 10 },
-              { weight: 0, reps: 10 },
-              { weight: 0, reps: 10 }
-            ]
-          });
-        }
-      });
-
-      // Fallback if no exercises were matched
-      if (matchedExercises.length === 0) {
-        const defaultList = [
-          { id: 'press-banca', name: 'Press de Banca con Barra', category: 'Pecho' },
-          { id: 'sentadilla-barra', name: 'Sentadilla Trasera con Barra', category: 'Cuádriceps' },
-          { id: 'remo-barra', name: 'Remo con Barra', category: 'Espalda' }
-        ];
-        defaultList.forEach(ex => {
-          matchedExercises.push({
-            id: 'form_ex_' + Math.random().toString(36).substr(2, 9),
-            exerciseId: ex.id,
-            name: ex.name,
-            category: ex.category,
-            sets: [
-              { weight: 0, reps: 10 },
-              { weight: 0, reps: 10 },
-              { weight: 0, reps: 10 }
-            ]
-          });
+    // 1. Scan the AI output for exercise names in our database
+    const matchedExercises = [];
+    const lowerText = result.toLowerCase();
+    
+    EXERCISES_DATABASE.forEach(ex => {
+      if (lowerText.includes(ex.name.toLowerCase())) {
+        matchedExercises.push({
+          id: 'form_ex_' + Math.random().toString(36).substr(2, 9),
+          exerciseId: ex.id,
+          name: ex.name,
+          category: ex.category,
+          sets: [
+            { weight: 0, reps: 10 },
+            { weight: 0, reps: 10 },
+            { weight: 0, reps: 10 }
+          ]
         });
       }
+    });
 
-      // 2. Select suggested days based on daysCount
-      let days = ['Lunes', 'Miércoles', 'Viernes'];
-      if (daysCount === '4') {
-        days = ['Lunes', 'Martes', 'Jueves', 'Viernes'];
-      } else if (daysCount === '5') {
-        days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
-      } else if (daysCount === '6') {
-        days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    // 2. Select suggested days based on daysCount
+    let days = ['Lunes', 'Miércoles', 'Viernes'];
+    if (daysCount === '4') {
+      days = ['Lunes', 'Martes', 'Jueves', 'Viernes'];
+    } else if (daysCount === '5') {
+      days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+    } else if (daysCount === '6') {
+      days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    }
+
+    setReviewRoutineName(`Rutina IA - ${goal} (${daysCount} días)`);
+    setReviewRoutineDays(days);
+    setReviewExercises(matchedExercises);
+    setReviewSearchQuery('');
+    setReviewSelectedCategory('Todos');
+    setShowReviewModal(true);
+  };
+
+  const handleAddExerciseToReview = (ex) => {
+    // Don't add duplicates
+    if (reviewExercises.find(e => e.exerciseId === ex.id)) return;
+    setReviewExercises([
+      ...reviewExercises,
+      {
+        id: 'form_ex_' + Math.random().toString(36).substr(2, 9),
+        exerciseId: ex.id,
+        name: ex.name,
+        category: ex.category,
+        sets: [
+          { weight: 0, reps: 10 },
+          { weight: 0, reps: 10 },
+          { weight: 0, reps: 10 }
+        ]
       }
+    ]);
+  };
 
+  const handleRemoveExerciseFromReview = (id) => {
+    setReviewExercises(reviewExercises.filter(ex => ex.id !== id));
+  };
+
+  const handleToggleReviewDay = (day) => {
+    if (reviewRoutineDays.includes(day)) {
+      setReviewRoutineDays(reviewRoutineDays.filter(d => d !== day));
+    } else {
+      setReviewRoutineDays([...reviewRoutineDays, day]);
+    }
+  };
+
+  const handleConfirmSaveRoutine = async () => {
+    if (!reviewRoutineName.trim()) return alert('Por favor, ingresa un nombre para la rutina');
+    if (reviewExercises.length === 0) return alert('Agrega al menos un ejercicio a la rutina');
+
+    setSavingRoutine(true);
+    try {
       const routineData = {
-        name: `Rutina IA - ${goal} (${daysCount} días)`,
-        days,
-        exercises: matchedExercises,
+        name: reviewRoutineName,
+        days: reviewRoutineDays,
+        exercises: reviewExercises,
         createdAt: new Date().toISOString()
       };
 
       if (isOffline) {
         await dbService.saveRoutine(user.uid, routineData);
       } else {
-        const { doc, setDoc } = await import('firebase/firestore');
         const docRef = doc(collection(db, 'users', user.uid, 'rutinas'));
         await setDoc(docRef, routineData);
       }
 
-      setImplementedSuccess(true);
-      setTimeout(() => setImplementedSuccess(false), 4000);
-      alert('¡Rutina recomendada guardada con éxito! La puedes ver en "Mis Rutinas".');
+      setShowReviewModal(false);
       navigate('/workouts');
     } catch (err) {
-      console.error('Error implementing routine:', err);
-      alert('Error al guardar la rutina recomendada.');
+      console.error('Error saving routine:', err);
+      alert('Error al guardar la rutina.');
     } finally {
-      setImplementing(false);
+      setSavingRoutine(false);
     }
   };
+
+  const filteredExercisesForReview = EXERCISES_DATABASE.filter(ex => {
+    const matchCat = reviewSelectedCategory === 'Todos' || ex.category === reviewSelectedCategory;
+    const matchSearch = !reviewSearchQuery || ex.name.toLowerCase().includes(reviewSearchQuery.toLowerCase());
+    return matchCat && matchSearch;
+  });
 
   const handleAcceptChanges = () => {
     alert('¡Ajustes de sobrecarga progresiva aceptados! Los nuevos pesos sugeridos se mantendrán para tu próxima sesión.');
@@ -463,18 +495,11 @@ const AICoach = () => {
                 </div>
                 {activeTab === 'generate' && (
                   <button
-                    onClick={handleImplementRoutine}
-                    disabled={implementing}
-                    className="px-3.5 py-1.5 bg-accent-neon text-black font-extrabold rounded-lg text-xs flex items-center gap-1.5 hover:opacity-90 disabled:opacity-50 transition-all cursor-pointer shadow-lg shadow-accent-neon/10"
+                    onClick={handleOpenReviewModal}
+                    className="px-3.5 py-1.5 bg-accent-neon text-black font-extrabold rounded-lg text-xs flex items-center gap-1.5 hover:opacity-90 transition-all cursor-pointer shadow-lg shadow-accent-neon/10"
                   >
-                    {implementing ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5 stroke-[3]" />
-                        <span>Implementar Rutina</span>
-                      </>
-                    )}
+                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                    <span>Implementar Rutina</span>
                   </button>
                 )}
                 {activeTab === 'optimize' && (
@@ -499,6 +524,188 @@ const AICoach = () => {
         </div>
 
       </div>
+
+      {/* ─── Review & Save Routine Modal ─── */}
+      {showReviewModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-3xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-slate-800 shrink-0">
+              <div>
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  <Dumbbell className="w-5 h-5 text-accent-neon" />
+                  Revisar Rutina Generada
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">Revisa los ejercicios detectados, agrega o elimina ejercicios, y guarda tu rutina.</p>
+              </div>
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body - Scrollable */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              
+              {/* Routine Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Nombre de la Rutina</label>
+                <input
+                  type="text"
+                  value={reviewRoutineName}
+                  onChange={(e) => setReviewRoutineName(e.target.value)}
+                  className="block w-full px-4 py-3 bg-slate-950 border border-slate-800 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-accent-neon transition-all"
+                  placeholder="ej. Rutina Push/Pull/Legs"
+                />
+              </div>
+
+              {/* Days Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Días de Entrenamiento</label>
+                <div className="flex flex-wrap gap-2">
+                  {daysOfWeek.map(day => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => handleToggleReviewDay(day)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                        reviewRoutineDays.includes(day) 
+                          ? 'bg-accent-neon/20 border-accent-neon/40 text-accent-neon' 
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      {day}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Current Exercises in Routine */}
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
+                  Ejercicios en la Rutina ({reviewExercises.length})
+                </label>
+                {reviewExercises.length === 0 ? (
+                  <div className="p-6 text-center border border-dashed border-slate-800 rounded-xl">
+                    <p className="text-xs text-slate-500">No se detectaron ejercicios. Usa el buscador de abajo para agregar ejercicios manualmente.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {reviewExercises.map((ex, idx) => (
+                      <div key={ex.id} className="flex items-center justify-between p-3 bg-slate-950/60 border border-slate-800/60 rounded-xl group">
+                        <div className="flex items-center gap-3">
+                          <span className="text-xs font-black text-accent-neon w-6 text-center">{idx + 1}</span>
+                          <div>
+                            <p className="text-sm font-bold text-white">{ex.name}</p>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">{ex.category} · {ex.sets.length} series</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveExerciseFromReview(ex.id)}
+                          className="p-1.5 rounded-lg text-slate-500 hover:bg-red-500/15 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add Exercises Browser */}
+              <div className="border-t border-slate-800 pt-5">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                  <Plus className="w-3.5 h-3.5 inline mr-1" />
+                  Agregar Ejercicios
+                </label>
+
+                {/* Search and Category Filter */}
+                <div className="flex flex-col sm:flex-row gap-2 mb-3">
+                  <div className="relative flex-1">
+                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                      type="text"
+                      placeholder="Buscar ejercicio..."
+                      value={reviewSearchQuery}
+                      onChange={(e) => setReviewSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-600 focus:outline-none focus:border-accent-neon"
+                    />
+                  </div>
+                  <select
+                    value={reviewSelectedCategory}
+                    onChange={(e) => setReviewSelectedCategory(e.target.value)}
+                    className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-accent-neon"
+                  >
+                    <option value="Todos">Todos</option>
+                    {MUSCLE_GROUPS.map(g => (
+                      <option key={g} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Exercise List */}
+                <div className="max-h-48 overflow-y-auto space-y-1.5 custom-scrollbar">
+                  {filteredExercisesForReview.map(ex => {
+                    const alreadyAdded = reviewExercises.find(e => e.exerciseId === ex.id);
+                    return (
+                      <div
+                        key={ex.id}
+                        className={`p-2.5 rounded-xl flex items-center justify-between gap-3 transition-all ${
+                          alreadyAdded 
+                            ? 'bg-accent-neon/5 border border-accent-neon/20 opacity-60' 
+                            : 'bg-slate-950/40 border border-slate-800/40 hover:border-slate-700 cursor-pointer'
+                        }`}
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-white">{ex.name}</p>
+                          <p className="text-[10px] text-slate-500 uppercase tracking-wider">{ex.category}</p>
+                        </div>
+                        {alreadyAdded ? (
+                          <span className="text-[10px] text-accent-neon font-bold uppercase">Agregado</span>
+                        ) : (
+                          <button
+                            onClick={() => handleAddExerciseToReview(ex)}
+                            className="p-1.5 rounded-lg bg-accent-neon/10 text-accent-neon hover:bg-accent-neon/20 transition-all"
+                          >
+                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-800 flex items-center justify-between gap-4 shrink-0">
+              <button
+                onClick={() => setShowReviewModal(false)}
+                className="px-5 py-2.5 bg-slate-800 text-slate-300 hover:bg-slate-700 font-bold rounded-xl text-sm transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmSaveRoutine}
+                disabled={savingRoutine || reviewExercises.length === 0}
+                className="px-6 py-2.5 bg-accent-neon text-black font-extrabold rounded-xl text-sm flex items-center gap-2 hover:opacity-90 disabled:opacity-50 transition-all shadow-lg shadow-accent-neon/15"
+              >
+                {savingRoutine ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>Guardar Rutina ({reviewExercises.length} ejercicios)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
